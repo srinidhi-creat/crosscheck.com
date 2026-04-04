@@ -16,10 +16,13 @@ def record_audio(key):
         key=key,
         media_stream_constraints={"audio": True, "video": False},
         async_processing=True,
-        audio_processor_factory=AudioProcessor,  # 🔥 IMPORTANT
+        audio_processor_factory=AudioProcessor  # 🔥 THIS FIXES EVERYTHING
     )
 
-    if ctx.audio_processor:
+    # default empty list
+    frames = []
+
+    if ctx and ctx.audio_processor:
         frames = ctx.audio_processor.frames
 
         if isinstance(frames, list) and len(frames) > 0:
