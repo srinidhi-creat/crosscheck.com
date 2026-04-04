@@ -15,14 +15,14 @@ def record_audio(key):
     ctx = webrtc_streamer(
         key=key,
         media_stream_constraints={"audio": True, "video": False},
-        async_processing=True,  # 🔥 important
+        async_processing=True,
+        audio_processor_factory=AudioProcessor,  # 🔥 IMPORTANT
     )
 
     if ctx.audio_processor:
         frames = ctx.audio_processor.frames
 
-        # only store if meaningful audio exists
-        if len(frames) > 0:
+        if isinstance(frames, list) and len(frames) > 0:
             st.session_state[key] = frames
 
     return st.session_state.get(key, [])
