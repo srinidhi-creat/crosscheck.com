@@ -1,0 +1,201 @@
+P.R.D
+
+name : crosscheck.com
+overview : a web app which helps in the job market analysis through cv and resume ,for both the employee and employer with multiple cross check and analysis of data taken and cv input or upload
+
+TECHSTACKS : 
+framework : Python Django (feature-rich), Flask (lightweight).
+JavaScript/Node.js, Express (minimalist), Next.js (React-based).
+Stack: Python 3.11+ · FastAPI · SQLite (dev) / PostgreSQL (prod) · MCP Server · Antigravity Deploy
+Core Premise: Self-trained AI models score, analyze, and filter resumes against job descriptions for both job-seekers and employers. Zero pre-trained models. Everything trained in-house on Kaggle data.
+platform : web browser
+web type : Ai model based web
+backend : node.js + python
+frontend : tailwand + css + typescript
+api intergrations are avoided majorly 
+i need a AI model not big LLM 
+authentication : google
+login : supabase 
+for the ai model training 
+┌─────────────────────────────────────────────────────┐
+│                   ANTIGRAVITY CLOUD                  │
+│                                                      │
+│  ┌──────────┐   ┌──────────────┐   ┌─────────────┐ │
+│  │  React    │◄──│  FastAPI      │◄──│  MCP Server │ │
+│  │  Frontend │──►│  Gateway      │──►│  (stdio)    │ │
+│  └──────────┘   └──────┬───────┘   └──────┬──────┘ │
+│                        │                    │        │
+│                 ┌──────▼───────┐    ┌──────▼──────┐ │
+│                 │   PostgreSQL  │    │  Model Store │ │
+│                 │   + Redis     │    │  /models/*.pk│ │
+│                 └──────────────┘    └─────────────┘ │
+└─────────────────────────────────────────────────────┘
+
+problems to be solved 
+we are creating a web app which takes the cv or resume from the user and give him a score and saved data of the 
+1.communication gap between employer and employee
+2.no,accurate analysis of CV
+3.suggestion is not personalized
+4.communication skill mistakes identification is not shown properly 
+5.no actual working time accurate jobs update
+
+1. As we are creating website which has both system login, i.e for employee and employers we can have the data of both the employee expectations and reality part, we will be able 
+   handle both and help both of them to achieve their want.
+2. Uploaded CV analysis will be compared with J D and user will be marked down and scored for three different score parameter for 
+  1.score taken
+  2.potential score (which can be acheived)
+  3.?/10 negative score (which actually means how irrelevant skill are CV which are unwanted to J D).
+SCORE ANALYSIS USING: CV + linkdin + GitHub(only for paid users).
+3. The AI suggest the matching company or in short company relatable it his score and personalized habits (or) requirement in that company.
+
+4.voice and written (MCQ) test analysis:
+which eradigates the problem of communication by reating the communication in 3 tiers.
+  1.grammatically
+  2.confidence
+  3.company required short forms
+by asking questions in voice as input from user
+
+5.A personalized filter system and login page for employer, where he/she can filter based on
+  1.points scored
+  2.potential scored
+  3.experience
+  4.techstacks
+  5.salary expectations
+  6.communication score 
+
+6.screenwise features for employee
+  1.splash screen/welcome screen
+  a.App logo
+  b.loading bar
+
+  2.Home screen
+  a.about company
+  b.advertisments
+
+  3.CV reading
+  a.CV upload
+  b. Job description upload auto/manual
+  c. search bar
+  d. J D upload button
+  f. score out of 100
+  g. potential score
+  h. AI suggestions of matching company
+  
+7.communication check
+  a. writing test
+  b. speaching test
+  c. score of the test
+  d. error summarization
+
+and  
+
+For employer
+1. home screen
+ - about employer
+ - filters option
+   a. points scored
+   b. experience
+   c. techstacks
+   d. salary expectations
+   e. communication scores
+ -list of filtered employees
+
+
+first i need to splash page
+then logo page with loading animation 
+then signup/login page with two options 
+1.for employee
+2. for employer 
+in one single page , 
+if for employee selected 
+where if you select employee it should ask 
+name
+email id
+otp to email
+set password
+verified status
+confirm password
+check box : terms and conditions check box (create a html file for terms and condition)
+submit button
+
+for employee
+after signing or logged up 
+the employee should see a logo page again 
+and then the money tier page 
+free and pro tier in one single page 
+where free tier consists of ,(with continue button)
+1.text suggestions 
+2.text analysed cv score
+3.communication test (one trail free)
+where pro version consist of with payment now button
+1.linkedin profile pdf upload analysis
+2.github profile integration for company suggestion based on skills and projects on GitHub
+3.best company recommendation based on LinkedIn profile and GitHub and cv uploaded
+4.communication test 
+a personalised suggestions for skill betterment
+if the person selects free tier and press continue , they should be redirected to next written page
+else the person selects pro tier and press pay now , they should be redirected to payment page (razorpay api integration )
+
+then after the next page (free tier)
+person should see the question page , where it should ask 30 personal questions and save it as data for further analysis
+home page : advertising of app developer names sri,rishi,arkesh, likith with company logo  and a great ui/ux model , like a first impression
+cv upload page : where cv should get upload 
+below that job description in words or pdf or text can be uploaded
+and then submit button , then the ai model should compare both the cv and job descrption(either from linkdin pdf or manual descrption type)
+then display like  give the scores in round score bar with color coding the comparision score with
+three score system
+1.obtained score
+with table under ,with all the compared criteria used
+2. potential score
+with extra things can be done to change the cv
+3.negative grades(irrelevant to the company's requirement)
+skills which are not used in the cv yet in the cv or resume
+
+then after payment page(for pro tier)
+person should see website
+ which consist of 
+home page : advertising of app developer names sri,rishi,arkesh, likith with company logo  and a great ui/ux model , like a first impression
+cv upload page : where cv should get upload 
+below that job description in words or pdf or text can be uploaded
+and then submit button , then the ai model should compare both the cv and job descrption(either from linkdin pdf or manual descrption type)
+then display like  give the scores in round score bar with color coding the comparision score with
+three score system
+1.obtained score
+with table under ,with all the compared criteria used
+2. potential score
+with extra things can be done to change the cv
+3.negative grades(irrelevant to the company's requirement)
+skills which are not used in the cv yet in the cv or resume
+next give company suggestion based on the cv (only for paid tier)
+communication test page : (can't be accessed by free tier)
+1.should ask 30 mcq questions , where 10 related to basic grammar, another 10 related verbal communication , another 10 company used short forms (ex : JD is job description)
+after the test , the ai should analyze the scores in backend 
+2.after finishing the test , then ai should ask another 30 questions which should ask permission to enable the mic of the computer/laptop/phone , after enabling , start to record or listen the answer and convert it into text on the page , then analyse the grammar, confidence, verbal speed of the user 
+
+after both the test analyses , reload the page then give the scores in round score bar with color coding
+
+a working dashboard downside (for both free and paid tier )
+profile( photo + name . where both can be edited
+gmail(can be changed, link with google through api)
+settings
+ 1.theme(dark or light)
+ 2.payment details
+ 3.accound and privacy
+ 4.about(version , developer contact)
+else, if employer selected 
+step 1. i need a login/signup page for the employer, it should contain the following headings with a textbox infront of it
+1. name of the company 
+2. name of the employer 
+3. roll of the employer 
+4. company address
+5. company email
+6. password 
+7. confirm password (make sure that the password entered here matches the password give in the previous detail)
+8. a checkbox for the terms and conditions 
+after this a button for payment and signup saying "submit and pay" this button should redirect me to a payment website(razorpay) and submit the details.
+
+step 2. i need this to redirect me to the home page after the payment which consists of the following 
+1. a list of all employee previously registered in the database 
+then a filter to filter out the required employees the filter should contain "experience", "techstacks", "salary expectations", "communication scores", "points scored", and many more used for filtering employees. like amazon, with an apply filters button to confirm the chosen filters
+2.The shortlisted employees and their details should be displayed on the right side of the website with an option to expand their details (ex: view more)
+3. i need an option to refresh the filtered page after selecting or deselecting more options/filters and newly employee list with all the filter page should be given out
