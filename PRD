@@ -1,1 +1,15 @@
+step 1. i need a login/signup page for the employer, it should contain the following headings with a textbox infront of it
+1. name of the company 
+2. name of the employer 
+3. roll of the employer 
+4. company address
+5. company email
+6. password 
+7. confirm password (make sure that the password entered here matches the password give in the previous detail)
+8. a checkbox for the terms and conditions 
+after this a button for payment and signup saying "submit and pay" this button should redirect me to a payment website and submit the details.
 
+step 2. i need this to redirect me to the home page which consists of the following 
+1. a filter to filter out the required employees the filter should contain "experience", "techstacks", "salary expectations", "communication scores", "points scored", and many more used for filtering employees. like amazon, with an apply filters button to confirm the chosen filters
+2.The shortlisted employees and their details should be displayed on the right side of the website with an option to expand their details (ex: view more)
+3. i need an option to refresh the filtered page after selecting or deselecting more options/filters
