@@ -16,16 +16,16 @@ def record_audio(key):
         key=key,
         media_stream_constraints={"audio": True, "video": False},
         async_processing=True,
-        audio_processor_factory=AudioProcessor  # 🔥 THIS FIXES EVERYTHING
+        audio_processor_factory=AudioProcessor
     )
 
-    # default empty list
-    frames = []
+    # store context for clearing later
+    st.session_state[f"{key}_ctx"] = ctx
 
+    # directly read frames (no session_state dependency)
     if ctx and ctx.audio_processor:
         frames = ctx.audio_processor.frames
+        if isinstance(frames, list):
+            return frames
 
-        if isinstance(frames, list) and len(frames) > 0:
-            st.session_state[key] = frames
-
-    return st.session_state.get(key, [])
+    return []

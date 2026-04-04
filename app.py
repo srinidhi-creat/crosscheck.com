@@ -48,16 +48,14 @@ if st.session_state.stage == "mcq":
         st.rerun()
 
 # ---------------- VOICE ----------------
+# ---------------- VOICE ----------------
 elif st.session_state.stage == "voice":
     st.header("Step 2: Voice Test 🎤")
     st.info("🎤 Click START → Speak → Click NEXT")
 
     qs = voice_questions()
-
-    # current question index
     i = st.session_state.voice_index
 
-    # stop after 5 questions
     if i >= 5:
         st.session_state.stage = "result"
         st.rerun()
@@ -67,23 +65,29 @@ elif st.session_state.stage == "voice":
     st.subheader(f"Question {i+1}")
     st.write(q)
 
-    # SINGLE MIC (important)
-    audio = record_audio("main_speech")
+    # 🎤 RECORD (dynamic key)
+    audio = record_audio(f"main_speech_{i}")
 
-    if st.button("Next"):
-        if audio and len(audio) > 0:
+    # DEBUG
+    st.write("Audio frames:", len(audio) if isinstance(audio, list) else "Not list")
+
+    if st.button("Next", key=f"next_{i}"):
+        if isinstance(audio, list) and len(audio) > 0:
             text = fake_transcribe(audio)
             st.write("📝 Transcribed:", text)
 
             score = speech_score(text)
             st.session_state.voice_scores.append(score)
 
-            # move to next question
+            # 🔥 CLEAR AUDIO
+            ctx = st.session_state.get(f"main_speech_{i}_ctx")
+            if ctx and ctx.audio_processor:
+                ctx.audio_processor.frames = []
+
             st.session_state.voice_index += 1
             st.rerun()
         else:
             st.warning("⚠️ Speak first before clicking Next")
-
 # ---------------- RESULT ----------------
 elif st.session_state.stage == "result":
     st.header("Final Results")
