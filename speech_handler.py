@@ -10,9 +10,9 @@ class AudioProcessor(AudioProcessorBase):
         return frame
 
 
-def record_audio():
+def record_audio(key):  
     ctx = webrtc_streamer(
-        key="speech",
+        key=key, 
         media_stream_constraints={"audio": True, "video": False},
     )
 
