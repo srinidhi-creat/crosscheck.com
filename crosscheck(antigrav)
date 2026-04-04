@@ -1,0 +1,567 @@
+# CrossCheck.com — Full-Stack Implementation Plan
+> PRD v1.0 | Prepared by: Sri, Rishi, Arkesh, Likith | Engineering Review: April 2026
+
+---
+
+## Executive Engineering Summary
+
+CrossCheck.com is a **dual-sided AI platform** (Employee + Employer) built with React/TypeScript on the front, FastAPI on the back, and a suite of **in-house ML models** (no external LLMs). The plan below translates every PRD requirement into concrete engineering tasks, file structures, API contracts, and deployment steps across **7 milestones**.
+
+---
+
+## User Review Required
+
+> [!IMPORTANT]
+> **No external LLMs allowed.** Every AI capability must be trained in-house on Kaggle datasets. This is architecturally challenging — see Section 5 (AI Strategy) for the model pipeline plan and dataset recommendations. Team must confirm Kaggle dataset licenses before M3.
+
+> [!WARNING]
+> **Razorpay integration** — The PRD is ambiguous on Pro tier pricing model: one-time purchase vs. monthly subscription. This affects DB schema (payments table structure), webhook logic, and the employer portal. **Decision required before M1 ends.**
+
+> [!WARNING]
+> **Employer PII Consent Trigger** — The PRD states employers cannot see candidate PII "without consent" but doesn't define the consent mechanism. This must be designed before M6 (Employer Portal). Options: (a) Candidate opts-in per-job, (b) Candidate gives blanket opt-in during onboarding. **Decision required before M6.**
+
+> [!CAUTION]
+> **Voice Data Storage** — Audio recordings require explicit GDPR/DPDP consent and secure encrypted storage. The PRD leaves this open (MinIO vs. Antigravity object store). **Decide before M4.** This impacts the backend file-handling architecture significantly.
+
+---
+
+## Proposed Changes — Full System Design
+
+---
+
+### Component 1: Project Scaffolding & Monorepo Structure
+
+```
+crosscheck/
+├── apps/
+│   ├── web/                    # React (TypeScript) + Tailwind CSS
+│   │   ├── src/
+│   │   │   ├── components/     # Shared UI components
+│   │   │   ├── pages/          # Route-level page components (S-01 to S-12)
+│   │   │   ├── hooks/          # Custom React hooks
+│   │   │   ├── store/          # Zustand global state
+│   │   │   ├── services/       # API client (Axios + React Query)
+│   │   │   ├── types/          # Shared TypeScript types
+│   │   │   └── utils/          # Helpers, formatters, validators
+│   │   ├── public/
+│   │   └── index.html
+│   └── mobile/                 # React Native (Expo) — Phase 2 or concurrent
+├── backend/
+│   ├── api/                    # FastAPI application
+│   │   ├── routers/            # auth, analysis, test, employer
+│   │   ├── models/             # SQLAlchemy ORM models
+│   │   ├── schemas/            # Pydantic request/response schemas
+│   │   ├── services/           # Business logic layer
+│   │   ├── ml/                 # ML model loaders & inference
+│   │   └── main.py
+│   ├── auxiliary/              # Node.js + Express (webhook handler, email OTP)
+│   │   ├── src/
+│   │   └── package.json
+│   └── models/                 # Serialized .pkl model files
+│       ├── resume_parser.pkl
+│       ├── jd_comparator.pkl
+│       ├── comm_scorer.pkl
+│       ├── company_recommender.pkl
+│       └── voice_analyzer.pkl
+├── ml_training/                # Jupyter notebooks + training scripts
+│   ├── datasets/               # Kaggle dataset references & download scripts
+│   ├── resume_parser/
+│   ├── jd_comparator/
+│   ├── comm_scorer/
+│   ├── company_recommender/
+│   └── voice_analyzer/
+├── infra/
+│   ├── docker-compose.yml      # Local dev stack
+│   ├── nginx.conf              # Reverse proxy config
+│   └── .env.example
+└── docs/
+    ├── api/                    # OpenAPI spec exports
+    └── models/                 # Model cards (training data, metrics, version)
+```
+
+**Tooling decisions:**
+- Monorepo managed with **Turborepo** (shared TypeScript types, build caching)
+- Frontend: **Vite + React 18 + TypeScript + Tailwind CSS v3**
+- Backend: **FastAPI 0.111 + SQLAlchemy 2.0 + Alembic** (migrations)
+- Node.js auxiliary: **Express v4** (webhook handler, email OTP via Resend/Nodemailer)
+- State management: **Zustand** (lightweight, no Redux boilerplate)
+- API client: **TanStack Query v5 + Axios**
+- Form validation: **React Hook Form + Zod**
+- Testing: **Vitest** (frontend), **pytest** (backend)
+
+---
+
+### Component 2: Database Schema (PostgreSQL)
+
+#### [NEW] `infra/schema.sql` — Full Production Schema
+
+```sql
+-- Users (central identity)
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT UNIQUE NOT NULL,
+  name TEXT NOT NULL,
+  role TEXT CHECK (role IN ('employee', 'employer', 'admin')) NOT NULL,
+  tier TEXT CHECK (tier IN ('free', 'pro')) DEFAULT 'free',
+  google_id TEXT UNIQUE,
+  verified BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Employee extended profiles
+CREATE TABLE employee_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  photo_url TEXT,
+  linkedin_url TEXT,
+  github_url TEXT,
+  location TEXT,
+  availability TEXT CHECK (availability IN ('immediate', '15_days', '30_days', '60_plus')),
+  salary_expectation_lpa NUMERIC(10,2),
+  experience_level TEXT CHECK (experience_level IN ('fresher', 'junior', 'mid', 'senior')),
+  tech_stacks TEXT[],   -- array of skill tags
+  education_level TEXT CHECK (education_level IN ('diploma', 'bachelor', 'master', 'phd')),
+  is_visible_to_employers BOOLEAN DEFAULT TRUE,  -- PII consent flag
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Employer extended profiles
+CREATE TABLE employer_profiles (
+  user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  company_name TEXT NOT NULL,
+  employer_name TEXT NOT NULL,
+  designation TEXT NOT NULL,
+  company_address TEXT,
+  company_email TEXT NOT NULL,
+  payment_status TEXT CHECK (payment_status IN ('pending', 'active', 'expired')) DEFAULT 'pending',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Onboarding answers (30 questions)
+CREATE TABLE onboarding_answers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  question_id INTEGER NOT NULL,
+  answer_text TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, question_id)
+);
+
+-- CV analysis results
+CREATE TABLE cv_analyses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  cv_file_path TEXT NOT NULL,
+  cv_file_name TEXT,
+  jd_text TEXT,
+  jd_file_path TEXT,
+  obtained_score NUMERIC(5,2),
+  potential_score NUMERIC(5,2),
+  negative_grade NUMERIC(5,2),
+  analysis_json JSONB,       -- full breakdown per criterion
+  suggestions_json JSONB,    -- actionable improvement checklist
+  flagged_terms_json JSONB,  -- negative grade detail
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Communication test scores
+CREATE TABLE communication_scores (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  mcq_grammar NUMERIC(5,2),
+  mcq_verbal NUMERIC(5,2),
+  mcq_shortforms NUMERIC(5,2),
+  voice_grammar NUMERIC(5,2),
+  voice_confidence NUMERIC(5,2),
+  voice_speed_wpm NUMERIC(6,2),
+  total_score NUMERIC(5,2),
+  error_summary_json JSONB,   -- per-question error detail
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Company recommendations (Pro only)
+CREATE TABLE company_suggestions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  company_name TEXT NOT NULL,
+  match_pct NUMERIC(5,2),
+  reasoning_json JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Payments (supports one-time & subscription)
+CREATE TABLE payments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  razorpay_order_id TEXT UNIQUE NOT NULL,
+  razorpay_payment_id TEXT,
+  razorpay_subscription_id TEXT,   -- null for one-time
+  payment_type TEXT CHECK (payment_type IN ('one_time', 'subscription')) NOT NULL,
+  amount NUMERIC(10,2) NOT NULL,
+  currency TEXT DEFAULT 'INR',
+  status TEXT CHECK (status IN ('created', 'paid', 'failed', 'refunded')) DEFAULT 'created',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Employer shortlists
+CREATE TABLE employer_shortlists (
+  employer_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  candidate_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  shortlisted_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (employer_id, candidate_id)
+);
+
+-- OTP verification log
+CREATE TABLE otp_verification (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL,
+  otp_hash TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Indexes for employer candidate filter queries
+CREATE INDEX idx_employee_profiles_tech ON employee_profiles USING GIN(tech_stacks);
+CREATE INDEX idx_employee_profiles_location ON employee_profiles(location);
+CREATE INDEX idx_cv_analyses_user ON cv_analyses(user_id, created_at DESC);
+CREATE INDEX idx_comm_scores_user ON communication_scores(user_id, created_at DESC);
+```
+
+**Engineering notes:**
+- `analysis_json` stored as JSONB for flexible breakdown schema as models evolve
+- `tech_stacks` as `TEXT[]` with GIN index for efficient employer filter queries
+- `is_visible_to_employers` on `employee_profiles` is the PII consent gate (resolves open question)
+- Separate `otp_verification` table keeps Supabase Auth as source of truth while supporting custom OTP flow
+
+---
+
+### Component 3: Backend — FastAPI Application
+
+#### [MODIFY] Router structure across 4 modules
+
+**`/auth` router** — Supabase Auth integration + custom OTP:
+```
+POST /auth/signup/employee    → validate OTP → create Supabase user → insert users row
+POST /auth/signup/employer    → create Supabase user → insert users + employer_profiles → Razorpay order
+POST /auth/login              → Supabase signInWithPassword → return JWT
+POST /auth/google             → Supabase Google OAuth callback → upsert user row
+POST /auth/send-otp           → generate 6-digit OTP → store hashed in otp_verification → send via email
+POST /auth/verify-otp         → validate hash + expiry → mark used → return verified=true
+POST /auth/logout             → Supabase signOut → invalidate refresh token
+```
+
+**`/analysis` router** — AI inference pipeline:
+```
+POST /analysis/cv
+  ├── Validate file (type, size)
+  ├── Extract text (pdfminer / python-docx)
+  ├── Load resume_parser.pkl → extract structured fields
+  ├── Load jd_comparator.pkl → compute cosine similarity + feature match
+  ├── Generate: obtained_score, potential_score, negative_grade
+  ├── Store cv_analyses row
+  └── Return 3-score JSON + breakdown
+
+POST /analysis/linkedin       → Parse uploaded LinkedIn PDF → extract profile fields
+POST /analysis/github         → GitHub API (authenticated) → scrape repo languages + README keywords
+POST /analysis/company-suggest → Load company_recommender.pkl → return ranked company list
+GET  /analysis/history        → paginated list of cv_analyses for user
+```
+
+**`/test` router** — Communication test engine:
+```
+GET  /test/mcq/questions      → shuffle 30 questions from DB seed → return question objects
+POST /test/mcq/submit         → score answers → update communication_scores
+GET  /test/voice/questions    → return 30 voice prompts
+POST /test/voice/submit-audio → STT (Whisper-small) → grammar/fluency analysis → return scores
+GET  /test/scores/latest      → latest communication_scores row for user
+```
+
+**`/employer` router** — Candidate discovery:
+```
+GET  /employer/candidates     → complex filter query across employee_profiles + cv_analyses + communication_scores
+GET  /employer/candidates/:id → full profile (respects is_visible_to_employers flag)
+POST /employer/shortlist/:id  → insert employer_shortlists row
+DELETE /employer/shortlist/:id → delete row
+GET  /employer/shortlist      → return shortlisted candidates
+```
+
+**Middleware stack (FastAPI):**
+- `JWTMiddleware` — verify Supabase JWT on every protected route
+- `TierMiddleware` — enforce Pro-only endpoints (analysis/linkedin, analysis/github, etc.)
+- `RateLimiter` — Redis-backed rate limiting (`slowapi`)
+- `CORSMiddleware` — whitelist production + staging domains
+- `RequestLogger` — structured JSON logging for Antigravity monitoring
+
+---
+
+### Component 4: Node.js Auxiliary Service
+
+Handles two concerns FastAPI is not ideal for:
+
+1. **Razorpay Webhooks** — Express endpoint at `POST /webhooks/razorpay`
+   - Verifies webhook signature (`X-Razorpay-Signature` HMAC)
+   - On `payment.captured`: update `payments.status = 'paid'`, update `users.tier = 'pro'` or `employer_profiles.payment_status = 'active'`
+   - Idempotency: check `razorpay_payment_id` exists before updating
+
+2. **Email OTP Delivery** — Express endpoint at `POST /email/send-otp`
+   - Called internally by FastAPI auth service
+   - Uses **Resend** (recommended) or Nodemailer + SMTP
+   - OTP email template: branded CrossCheck HTML email
+
+---
+
+### Component 5: AI Model Pipeline
+
+> [!IMPORTANT]
+> All models must be trained in-house. No OpenAI, Gemini, or Claude APIs. Below is the recommended Kaggle dataset + algorithm pairing for each model.
+
+#### Model 1: Resume Parser
+- **Dataset**: [Resume Dataset (Kaggle)](https://www.kaggle.com/datasets/gauravduttakiit/resume-dataset) — 2,484 labeled resumes across 25 categories
+- **Algorithm**: SpaCy NER (Named Entity Recognition) fine-tuned on resume entities (SKILL, COMPANY, DEGREE, DATE)
+- **Output**: Structured JSON `{skills: [], experience: [{company, role, duration}], education: [{degree, institution}], certifications: []}`
+- **Serialization**: SpaCy model directory + `joblib` for feature extractors
+
+#### Model 2: JD Comparator (Scoring Engine)
+- **Dataset**: Same resume dataset + scraped JD text (Kaggle job descriptions dataset)
+- **Algorithm**: TF-IDF vectorizer + Cosine Similarity. Feature-match scoring on: skills overlap (40%), experience match (25%), education match (15%), keyword density (20%)
+- **Output**: `{obtained_score, potential_score, negative_grade, breakdown_json}`
+- **Serialization**: `joblib` → `jd_comparator.pkl`
+
+#### Model 3: Communication Scorer (MCQ)
+- **Dataset**: Grammar/NLP datasets from Kaggle (CoLA corpus, JFLEG for grammar correction)
+- **Algorithm**: Rule-based scoring for MCQ (correct answer lookup) + text similarity for open answers
+- **Output**: Per-block scores (grammar, verbal, shortforms)
+
+#### Model 4: Voice Analyzer (STT + Fluency)
+- **STT**: **Whisper-small** (OpenAI open-source, not API — runs locally, meets "no LLM API" constraint)
+- **Fluency analysis**: WPM calculation, filler word detection (`um`, `uh`, `like`, `you know`), grammar scoring via Language Tool (Java, open-source)
+- **Dataset**: LibriSpeech (open-source) for accent calibration
+- **Output**: `{transcript, wpm, filler_count, grammar_score, confidence_score}`
+
+#### Model 5: Company Recommender
+- **Dataset**: Company reviews + skill requirements (Kaggle job market datasets)
+- **Algorithm**: Content-Based Filtering using TF-IDF profile embeddings + cosine similarity against company skill profiles
+- **Output**: Ranked list of companies with match % and skill alignment reasoning
+
+**Model versioning strategy:**
+- Each `.pkl` includes metadata: `{model_version, training_date, dataset_version, performance_metrics}`
+- Admin dashboard trigger for manual retraining (M7)
+- Models loaded at FastAPI startup, cached in memory (`@lru_cache`)
+
+---
+
+### Component 6: Frontend — React Application (12 Screens)
+
+#### Technology decisions:
+- **Vite** build tool (fast HMR, native ESM)
+- **React Router v6** (nested layouts, nested routes)
+- **Tailwind CSS v3** with custom design tokens
+- **Framer Motion** for screen transitions and animations (splash, brand screen)
+- **React Hook Form + Zod** for all form validation
+- **Recharts** for circular progress score visualizations
+- **WaveSurfer.js** for voice recording waveform visualization
+- **react-dropzone** for CV file upload drag-and-drop
+
+#### Screen-to-Route mapping:
+
+| Screen | Route | Component | Auth Guard |
+|--------|-------|-----------|------------|
+| S-01 Splash | `/` | `SplashScreen.tsx` | None |
+| S-02 Brand | `/brand` | `BrandScreen.tsx` | None |
+| S-03 Login/Signup | `/auth` | `AuthScreen.tsx` | Guest only |
+| S-04 Tier Selection | `/onboarding/tier` | `TierSelect.tsx` | Employee auth |
+| S-05 Payment | (Razorpay hosted) | External redirect | Employee auth |
+| S-06 Personal Questions | `/onboarding/questions` | `PersonalQuestions.tsx` | Employee auth |
+| S-07 Employee Home | `/home` | `EmployeeHome.tsx` | Employee auth |
+| S-08 CV Upload | `/cv-analysis` | `CVAnalysis.tsx` | Employee auth |
+| S-09 Communication Test | `/comm-test` | `CommTest.tsx` | Employee Pro |
+| S-10 Dashboard | `/dashboard` | `Dashboard.tsx` | Employee auth |
+| S-11 Terms | `/terms` | `Terms.tsx` | None |
+| S-12 Employer Home | `/employer` | `EmployerHome.tsx` | Employer auth |
+
+#### Layout architecture:
+```
+AppRouter
+├── GuestLayout (no nav) → Splash, Brand, Auth, Terms
+├── EmployeeLayout (bottom nav mobile / left sidebar desktop)
+│   ├── EmployeeHome
+│   ├── CVAnalysis
+│   ├── CommTest (Pro guard)
+│   └── Dashboard
+└── EmployerLayout (filter sidebar + main content)
+    └── EmployerHome
+```
+
+#### Key component implementations:
+
+**CircularScoreBar.tsx** — SVG-based animated radial progress
+- Props: `score`, `maxScore`, `color`, `label`
+- Animates from 0 to score on mount (CSS transition)
+- Color logic: green (70+), yellow (40–69), red (<40)
+
+**CVDropzone.tsx** — File upload with validation
+- react-dropzone for drag-and-drop
+- Client-side validation: PDF/DOCX only, max 5MB
+- Upload progress indicator
+
+**FilterSidebar.tsx** (Employer) — Accordion filter panel
+- Range sliders (rc-slider)
+- Tag input for tech stacks (react-select creatable)
+- Immediate filter count badge update on change
+
+**VoiceRecorder.tsx** — Browser microphone integration
+- `navigator.mediaDevices.getUserMedia({ audio: true })`
+- MediaRecorder API → WebM/Ogg audio
+- WaveSurfer.js live waveform
+- Uploads audio blob to `/test/voice/submit-audio`
+
+**MCQTimer.tsx** — Countdown timer (25 minutes)
+- `useEffect` interval with cleanup
+- Visual warning at 5 minutes remaining
+- Auto-submit on timer expiry
+
+---
+
+### Component 7: Mobile Application
+
+> [!NOTE]
+> The PRD specifies "Mobile" as a target platform. Recommended approach: **React Native (Expo)** sharing business logic and TypeScript types from the monorepo. This allows code reuse without maintaining a completely separate codebase.
+
+**Shared between web and mobile:**
+- TypeScript types (`/packages/types`)
+- API service layer (`/packages/api-client`)
+- Validation schemas (Zod)
+- Utility functions
+
+**Mobile-specific implementations:**
+- `expo-document-picker` → file upload (replaces react-dropzone)
+- `expo-av` → voice recording (replaces Web MediaRecorder API)
+- `react-native-bottom-tabs` → navigation
+- Push notifications via Expo Notifications (OTP, analysis complete)
+
+---
+
+### Component 8: Authentication (Supabase)
+
+**Supabase Auth configuration:**
+- Enable Email/Password provider
+- Enable Google OAuth provider (configure OAuth app in Google Cloud Console)
+- Custom OTP flow: Supabase `auth.generateOtp()` OR custom OTP stored in `otp_verification` table (recommended for full control + branding)
+- JWT secret: use Supabase's JWKS endpoint for FastAPI JWT verification
+
+**RLS (Row Level Security) policies:**
+```sql
+-- Users can only read/write their own data
+ALTER TABLE employee_profiles ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users manage own profile" ON employee_profiles
+  USING (auth.uid() = user_id);
+
+-- Employers can read visible employee profiles
+CREATE POLICY "Employers read visible profiles" ON employee_profiles
+  FOR SELECT USING (
+    is_visible_to_employers = TRUE 
+    AND EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role = 'employer')
+  );
+```
+
+---
+
+### Component 9: Antigravity Cloud Deployment
+
+**MCP Server (stdio transport)** — wraps the FastAPI/Node.js services:
+```
+[React Web App] → Nginx → [FastAPI :8000] → [PostgreSQL :5432]
+                    ↓                    ↘ [Redis :6379]
+              [Node.js :3001]         [Model Store /models/]
+              (webhooks + email)
+```
+
+**Docker Compose (local dev):**
+```yaml
+services:
+  web:       # Vite dev server :5173
+  api:       # FastAPI :8000 (uvicorn --reload)
+  auxiliary: # Node.js :3001
+  db:        # PostgreSQL :5432
+  redis:     # Redis :6379
+  whisper:   # Whisper-small service :8080 (separate container)
+```
+
+**Nginx config (production):**
+- `/` → Vite static build
+- `/api/` → FastAPI upstream (proxy_pass)
+- `/hooks/` → Node.js upstream (webhook handler)
+- HTTPS termination at Nginx with Let's Encrypt
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> **Q1 — Razorpay pricing model**: Is Pro tier a one-time purchase (₹X) or monthly subscription? This affects the payments table, webhook logic, and tier expiry handling. Please confirm before M1 ends.
+
+> [!IMPORTANT]
+> **Q2 — GitHub OAuth**: GitHub API's unauthenticated rate limit is 60 requests/hour — far too low for production. Pro users will need to authorize CrossCheck's GitHub OAuth app to provide a user token. Is the team okay with this additional OAuth step for Pro users?
+
+> [!WARNING]
+> **Q3 — AI retraining trigger**: Will model retraining be triggered manually by an admin (simpler, safer) or automatically when new data crosses a threshold? Manual is strongly recommended for v1.0 to prevent model drift in production.
+
+> [!WARNING]
+> **Q4 — Voice storage**: MinIO (self-hosted on Antigravity) vs. Supabase Storage (simpler, S3-compatible)? If MinIO, we need an additional Docker container and bucket lifecycle policies. Recommend **Supabase Storage** for v1.0 to reduce ops complexity.
+
+> [!IMPORTANT]
+> **Q5 — DPDP / GDPR**: Is CrossCheck India-first? If yes, DPDP Act 2023 requires a Data Privacy Notice, explicit consent for each data category (CV, voice, onboarding answers), and a Data Fiduciary registration. This must be scoped before M1.
+
+> [!WARNING]
+> **Q6 — Whisper-small compute**: Running Whisper-small in real-time per voice answer requires a GPU or a beefy CPU. Has the Antigravity Cloud environment been sized for this? Recommend: dedicated Whisper container with async job queue (Redis + Celery) to prevent blocking API responses.
+
+> [!IMPORTANT]
+> **Q7 — Mobile priority**: Should mobile (React Native/Expo) be built in parallel with web (recommended), or as Phase 2 after web is complete? This significantly affects the team structure and timeline.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+- **Frontend**: `vitest` unit tests for all utility functions, Zod schemas, and store logic. Playwright E2E tests for critical flows (signup, CV upload, MCQ test).
+- **Backend**: `pytest` with `httpx` async test client covering all API endpoints. Mock ML model inference in tests using `unittest.mock`.
+- **DB**: Alembic migration tests — apply/rollback on clean PostgreSQL instance.
+- **CI**: GitHub Actions pipeline running lint + test + build on every PR.
+
+### Manual Verification (Per Milestone)
+- **M1**: Google OAuth login works end-to-end. OTP email received and verified. Razorpay sandbox payment completes and user tier updates.
+- **M2**: 30 personal questions submit, answers stored in DB. Tier selection redirects correctly.
+- **M3**: Upload a real-world PDF CV + paste a JD. All three scores render with correct color coding.
+- **M4**: MCQ timer counts down. Voice recording captures audio. Transcript appears within 3 seconds.
+- **M5**: Pro user sees company suggestions after CV analysis. GitHub integration fetches repo languages.
+- **M6**: Employer filter sidebar updates candidate list. Shortlist add/remove persists.
+- **M7**: Dark/light mode toggle persists across sessions. All 12 screens render correctly on Chrome, Firefox, Safari, Edge. Mobile layouts verified on iOS Safari + Android Chrome.
+
+---
+
+## Revised Milestone Schedule
+
+| Milestone | Deliverables | Est. Duration |
+|-----------|-------------|---------------|
+| **M1 — Foundation** | Monorepo setup, Supabase Auth, PostgreSQL schema + Alembic migrations, Google OAuth, Razorpay sandbox, Splash + Brand + Auth screens | Week 1–2 |
+| **M2 — Employee Onboarding** | Tier selection, Razorpay payment flow, webhook handler, personal questions (30Q), employee home screen | Week 3–4 |
+| **M3 — CV Analysis** | CV upload + JD input UI, resume parser model training, JD comparator model training, 3-score output screen | Week 5–7 |
+| **M4 — Communication Test** | MCQ engine (30Q seed data), voice recording (Web MediaRecorder), Whisper-small STT container, communication scoring, results screen | Week 8–10 |
+| **M5 — Pro Features** | LinkedIn PDF parser, GitHub OAuth + API scraper, company recommender model, Pro-tier gating | Week 11–12 |
+| **M6 — Employer Portal** | Employer signup + Razorpay, employer filter sidebar, candidate list + detail view, shortlisting, PII consent gate | Week 13–15 |
+| **M7 — Polish & Deploy** | Dashboard, settings, dark/light mode, Terms HTML, mobile responsive QA, Antigravity deployment, full E2E test suite | Week 16 |
+
+---
+
+## Risk Register
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| In-house ML model quality insufficient | Medium | High | Set baseline benchmarks early (M3). Have fallback rule-based scoring if model accuracy < threshold. |
+| Whisper-small latency too high (>3s per answer) | Medium | High | Pre-warm container. Use async job queue. Set user expectation with progress indicator. |
+| Razorpay webhook delivery failures | Low | High | Idempotent webhook handler + retry logic. Admin alert on failed payment events. |
+| GitHub API rate limiting | High | Medium | Require user GitHub OAuth token for Pro. Cache API responses in Redis (24hr TTL). |
+| Kaggle dataset license incompatibility | Low | Critical | Legal review of all dataset licenses before M3 training begins. Prioritize datasets with CC BY 4.0 or similar. |
+| DPDP Act compliance gap | Medium | Critical | Engage legal counsel before M1. Add consent banners and data deletion endpoints. |
