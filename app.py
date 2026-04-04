@@ -1,10 +1,9 @@
 import streamlit as st
 from question_generator import generate_mcq, voice_questions
-from evaluator import mcq_score, speech_score, fake_transcribe
-from speech_handler import record_audio
+from evaluator import mcq_score, speech_score, transcribe_audio
+from speech_handler import record_audio, clear_audio
 
 st.set_page_config(page_title="AI Communication Test", layout="centered")
-
 st.title("🧠 AI Communication Test")
 
 # ---------------- STATE ----------------
@@ -17,28 +16,16 @@ if "stage" not in st.session_state:
 if st.session_state.stage == "mcq":
     st.header("Step 1: MCQ Test")
 
-    # generate only once
     if "questions" not in st.session_state:
         st.session_state.questions = generate_mcq()
 
     questions = st.session_state.questions
     correct = []
-
     st.session_state.answers = []
 
     for i, (q, opts, c) in enumerate(questions):
-        ans = st.radio(
-            f"{i+1}. {q}",
-            opts,
-            key=f"mcq_{i}",
-            index=None  # no default selection
-        )
-
-        if ans is not None:
-            st.session_state.answers.append(opts.index(ans))
-        else:
-            st.session_state.answers.append(-1)
-
+        ans = st.radio(f"{i+1}. {q}", opts, key=f"mcq_{i}", index=None)
+        st.session_state.answers.append(opts.index(ans) if ans is not None else -1)
         correct.append(c)
 
     if st.button("Submit MCQ"):
@@ -48,10 +35,8 @@ if st.session_state.stage == "mcq":
         st.rerun()
 
 # ---------------- VOICE ----------------
-# ---------------- VOICE ----------------
 elif st.session_state.stage == "voice":
     st.header("Step 2: Voice Test 🎤")
-    st.info("🎤 Click START → Speak → Click NEXT")
 
     qs = voice_questions()
     i = st.session_state.voice_index
@@ -60,47 +45,53 @@ elif st.session_state.stage == "voice":
         st.session_state.stage = "result"
         st.rerun()
 
-    q = qs[i]
+    st.progress(i / 5, text=f"Question {i+1} of 5")
+    st.subheader(qs[i])
+    st.info("🎤 Click the microphone below to record, then click **Next** when done.")
 
-    st.subheader(f"Question {i+1}")
-    st.write(q)
+    audio_key = f"speech_{i}"
+    audio = record_audio(audio_key)
 
-    # 🎤 RECORD (dynamic key)
-    audio = record_audio(f"main_speech_{i}")
+    # Show status
+    if audio is not None:
+        st.success("✅ Recording captured! Click **Next ▶** to continue.")
+        st.audio(audio)  # playback so user can verify
+    else:
+        st.caption("No recording yet — press the mic button above.")
 
-    # DEBUG
-    st.write("Audio frames:", len(audio) if isinstance(audio, list) else "Not list")
-
-    if st.button("Next", key=f"next_{i}"):
-        if isinstance(audio, list) and len(audio) > 0:
-            text = fake_transcribe(audio)
+    if st.button("Next ▶", key=f"next_{i}"):
+        if audio is not None:
+            raw_bytes = audio.read() if hasattr(audio, "read") else audio
+            text = transcribe_audio(raw_bytes)
             st.write("📝 Transcribed:", text)
-
-            score = speech_score(text)
-            st.session_state.voice_scores.append(score)
-
-            # 🔥 CLEAR AUDIO
-            ctx = st.session_state.get(f"main_speech_{i}_ctx")
-            if ctx and ctx.audio_processor:
-                ctx.audio_processor.frames = []
-
+            st.session_state.voice_scores.append(speech_score(text))
+            clear_audio(audio_key)
             st.session_state.voice_index += 1
             st.rerun()
         else:
-            st.warning("⚠️ Speak first before clicking Next")
+            st.warning("⚠️ Please record an answer before clicking Next.")
+
 # ---------------- RESULT ----------------
 elif st.session_state.stage == "result":
-    st.header("Final Results")
+    st.header("🎉 Final Results")
+    st.subheader(f"MCQ Score: {st.session_state.get('mcq_score', 0)} / 30")
 
-    st.subheader(f"MCQ Score: {st.session_state.mcq_score}/30")
+    scores = st.session_state.voice_scores
+    if scores:
+        g = sum(s[0] for s in scores) / len(scores)
+        c = sum(s[1] for s in scores) / len(scores)
+        sp = sum(s[2] for s in scores) / len(scores)
 
-    g = sum([s[0] for s in st.session_state.voice_scores]) / len(st.session_state.voice_scores)
-    c = sum([s[1] for s in st.session_state.voice_scores]) / len(st.session_state.voice_scores)
-    s = sum([s[2] for s in st.session_state.voice_scores]) / len(st.session_state.voice_scores)
+        def color(x):
+            return "green" if x > 7 else "orange" if x > 4 else "red"
 
-    def color(x):
-        return "green" if x > 7 else "orange" if x > 4 else "red"
+        st.markdown(f"<h3 style='color:{color(g)}'>Grammar: {round(g,2)} / 10</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:{color(c)}'>Confidence: {round(c,2)} / 10</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color:{color(sp)}'>Speed: {round(sp,2)} / 10</h3>", unsafe_allow_html=True)
+    else:
+        st.warning("No voice scores recorded.")
 
-    st.markdown(f"<h3 style='color:{color(g)}'>Grammar: {round(g,2)}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='color:{color(c)}'>Confidence: {round(c,2)}</h3>", unsafe_allow_html=True)
-    st.markdown(f"<h3 style='color:{color(s)}'>Speed: {round(s,2)}</h3>", unsafe_allow_html=True)
+    if st.button("🔄 Restart"):
+        for k in list(st.session_state.keys()):
+            del st.session_state[k]
+        st.rerun()
