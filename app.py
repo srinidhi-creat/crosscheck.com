@@ -7,66 +7,84 @@ st.set_page_config(page_title="AI Communication Test", layout="centered")
 
 st.title("🧠 AI Communication Test")
 
-
+# ---------------- STATE ----------------
 if "stage" not in st.session_state:
     st.session_state.stage = "mcq"
     st.session_state.answers = []
     st.session_state.voice_scores = []
 
-
+# ---------------- MCQ ----------------
 if st.session_state.stage == "mcq":
     st.header("Step 1: MCQ Test")
 
-    questions = generate_mcq()
+    # generate only once
+    if "questions" not in st.session_state:
+        st.session_state.questions = generate_mcq()
+
+    questions = st.session_state.questions
     correct = []
 
-    
     st.session_state.answers = []
 
     for i, (q, opts, c) in enumerate(questions):
-        ans = st.radio(f"{i+1}. {q}", opts, key=f"mcq_{i}")
-        st.session_state.answers.append(opts.index(ans))
+        ans = st.radio(
+            f"{i+1}. {q}",
+            opts,
+            key=f"mcq_{i}",
+            index=None  # no default selection
+        )
+
+        if ans is not None:
+            st.session_state.answers.append(opts.index(ans))
+        else:
+            st.session_state.answers.append(-1)
+
         correct.append(c)
 
     if st.button("Submit MCQ"):
         st.session_state.mcq_score = mcq_score(st.session_state.answers, correct)
         st.session_state.stage = "voice"
+        st.session_state.voice_index = 0
         st.rerun()
 
-
+# ---------------- VOICE ----------------
 elif st.session_state.stage == "voice":
     st.header("Step 2: Voice Test 🎤")
-    st.info("🎤 Using real mic input via browser")
+    st.info("🎤 Click START → Speak → Click NEXT")
 
     qs = voice_questions()
 
-    for i, q in enumerate(qs[:5]):
-        st.subheader(f"Question {i+1}")
-        st.write(q)
+    # current question index
+    i = st.session_state.voice_index
 
-        
-        audio = record_audio(f"speech_{i}")
+    # stop after 5 questions
+    if i >= 5:
+        st.session_state.stage = "result"
+        st.rerun()
 
-        if st.button(f"Analyze Answer {i+1}", key=f"btn_{i}"):
-            if audio:
-                text = fake_transcribe(audio)
-                st.write("📝 Transcribed:", text)
+    q = qs[i]
 
-                score = speech_score(text)
-                st.session_state.voice_scores.append(score)
-            else:
-                st.warning("⚠️ No audio detected. Click mic and speak first.")
+    st.subheader(f"Question {i+1}")
+    st.write(q)
 
-        st.divider()
+    # SINGLE MIC (important)
+    audio = record_audio("main_speech")
 
-    if st.button("Finish Test"):
-        if len(st.session_state.voice_scores) == 0:
-            st.warning("⚠️ Please answer at least one question")
-        else:
-            st.session_state.stage = "result"
+    if st.button("Next"):
+        if audio and len(audio) > 0:
+            text = fake_transcribe(audio)
+            st.write("📝 Transcribed:", text)
+
+            score = speech_score(text)
+            st.session_state.voice_scores.append(score)
+
+            # move to next question
+            st.session_state.voice_index += 1
             st.rerun()
+        else:
+            st.warning("⚠️ Speak first before clicking Next")
 
-
+# ---------------- RESULT ----------------
 elif st.session_state.stage == "result":
     st.header("Final Results")
 

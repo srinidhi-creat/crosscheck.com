@@ -14,6 +14,5 @@ def speech_score(text):
     return grammar, confidence, speed
 
 
-# fake transcription (hackathon-safe)
 def fake_transcribe(audio):
     return "This is a simulated spoken response demonstrating communication ability"

@@ -1,5 +1,6 @@
 from streamlit_webrtc import webrtc_streamer, AudioProcessorBase
 import av
+import streamlit as st
 
 class AudioProcessor(AudioProcessorBase):
     def __init__(self):
@@ -10,12 +11,18 @@ class AudioProcessor(AudioProcessorBase):
         return frame
 
 
-def record_audio(key):  
+def record_audio(key):
     ctx = webrtc_streamer(
-        key=key, 
+        key=key,
         media_stream_constraints={"audio": True, "video": False},
+        async_processing=True,  # 🔥 important
     )
 
     if ctx.audio_processor:
-        return ctx.audio_processor.frames
-    return None
+        frames = ctx.audio_processor.frames
+
+        # only store if meaningful audio exists
+        if len(frames) > 0:
+            st.session_state[key] = frames
+
+    return st.session_state.get(key, [])
