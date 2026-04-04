@@ -1,0 +1,5 @@
+streamlit
+textstat
+streamlit-webrtc
+numpy
+av
