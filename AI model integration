@@ -1,0 +1,73 @@
+# Integrate AI Model with CommTest Frontend
+
+## Overview
+
+The Python AI model (Flask/Streamlit) handles:
+- **MCQ scoring** — `mcq_score()` in `evaluator.py`
+- **Speech scoring** — `speech_score(text)` — grammar (textstat), confidence, speed
+- **Transcription** — `transcribe_audio()` — currently a stub (no real STT)
+- **Question generation** — `generate_mcq()`, `voice_questions()`
+
+The React frontend (`CommTest.tsx`) currently has:
+- MCQ questions hardcoded
+- Voice recording UI (stores audio locally) but fake transcript placeholder
+- Results page with **static hardcoded scores**
+
+## Strategy: Flask REST API Backend
+
+Convert the Streamlit Python model into a **Flask REST API** that the React frontend calls.
+
+---
+
+## Proposed Changes
+
+### Python Backend — `ai model/`
+
+#### [MODIFY] [app.py](file:///c:/Users/rlikh/OneDrive/Desktop/anti%20gravity%20-%20Copy/ai%20model/app.py)
+Rewrite from Streamlit to **Flask REST API** with three endpoints:
+- `GET /api/questions` — returns MCQ questions + voice questions as JSON
+- `POST /api/score/mcq` — accepts `{answers: [], correct: []}`, returns MCQ score
+- `POST /api/score/speech` — accepts audio file (webm/wav), transcribes + scores, returns `{transcript, grammar, confidence, speed}`
+
+#### [NEW] `ai model/requirements.txt`
+Add `flask`, `flask-cors`, `textstat`. Remove `streamlit`.
+
+---
+
+### React Frontend — `src/pages/CommTest.tsx`
+
+#### [MODIFY] [CommTest.tsx](file:///c:/Users/rlikh/OneDrive/Desktop/anti%20gravity%20-%20Copy/src/pages/CommTest.tsx)
+
+Key changes:
+1. **MCQ Section** — fetch questions from `/api/questions` on mount, track correct answers, POST to `/api/score/mcq` on submit
+2. **Voice Section** — after stopping recording, send audio blob to `POST /api/score/speech`, display real transcript + live AI scores per question
+3. **Results Section** — display actual averaged scores from the API (grammar, confidence, speed) instead of hardcoded values. Save final score to Supabase `comm_results` table.
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> The Python `transcribe_audio()` is currently a **stub** — it returns a fake string. Real transcription requires either:
+> - **OpenAI Whisper API** (needs an API key)
+> - **Local Whisper** (heavy, runs on CPU/GPU)
+> - **Web Speech API** (browser-native, free, no backend needed)
+>
+> **Recommended**: Use the browser's built-in **Web Speech API** (`SpeechRecognition`) for transcription directly in the React frontend — this is free, real-time, and avoids the need for a Python STT backend. The Python backend then only handles **scoring** (grammar analysis via textstat).
+>
+> Do you want: (A) Browser Web Speech API for transcription (free, no key needed) or (B) OpenAI Whisper (needs API key)?
+
+> [!NOTE]
+> The Flask API will run on `http://localhost:5000`. For production, this would need to be deployed. For now, this is a local dev integration.
+
+## Verification Plan
+
+### Automated
+- `python app.py` to start Flask server
+- Test endpoints via browser fetch / curl
+
+### Manual
+- Open the CommTest page, complete MCQ — verify scores come from API
+- Record a voice answer — verify transcript appears and scores update
+- Reach results page — verify real averaged scores display
+
