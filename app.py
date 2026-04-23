@@ -4,7 +4,7 @@ from evaluator import mcq_score, speech_score, transcribe_audio
 from speech_handler import record_audio, clear_audio
 
 st.set_page_config(page_title="AI Communication Test", layout="centered")
-st.title("🧠 AI Communication Test")
+st.title(" AI Communication Test")
 
 # ---------------- STATE ----------------
 if "stage" not in st.session_state:
@@ -36,7 +36,7 @@ if st.session_state.stage == "mcq":
 
 # ---------------- VOICE ----------------
 elif st.session_state.stage == "voice":
-    st.header("Step 2: Voice Test 🎤")
+    st.header("Step 2: Voice Test ")
 
     qs = voice_questions()
     i = st.session_state.voice_index
@@ -47,14 +47,14 @@ elif st.session_state.stage == "voice":
 
     st.progress(i / 5, text=f"Question {i+1} of 5")
     st.subheader(qs[i])
-    st.info("🎤 Click the microphone below to record, then click **Next** when done.")
+    st.info(" Click the microphone below to record, then click **Next** when done.")
 
     audio_key = f"speech_{i}"
     audio = record_audio(audio_key)
 
     # Show status
     if audio is not None:
-        st.success("✅ Recording captured! Click **Next ▶** to continue.")
+        st.success(" Recording captured! Click **Next ▶** to continue.")
         st.audio(audio)  # playback so user can verify
     else:
         st.caption("No recording yet — press the mic button above.")
@@ -63,17 +63,17 @@ elif st.session_state.stage == "voice":
         if audio is not None:
             raw_bytes = audio.read() if hasattr(audio, "read") else audio
             text = transcribe_audio(raw_bytes)
-            st.write("📝 Transcribed:", text)
+            st.write(" Transcribed:", text)
             st.session_state.voice_scores.append(speech_score(text))
             clear_audio(audio_key)
             st.session_state.voice_index += 1
             st.rerun()
         else:
-            st.warning("⚠️ Please record an answer before clicking Next.")
+            st.warning(" Please record an answer before clicking Next.")
 
 # ---------------- RESULT ----------------
 elif st.session_state.stage == "result":
-    st.header("🎉 Final Results")
+    st.header("Final Results")
     st.subheader(f"MCQ Score: {st.session_state.get('mcq_score', 0)} / 30")
 
     scores = st.session_state.voice_scores
@@ -91,7 +91,7 @@ elif st.session_state.stage == "result":
     else:
         st.warning("No voice scores recorded.")
 
-    if st.button("🔄 Restart"):
+    if st.button("Restart"):
         for k in list(st.session_state.keys()):
             del st.session_state[k]
         st.rerun()
